@@ -30,6 +30,16 @@ A sophisticated real-time negotiation platform for local trade with AI-powered p
 - **Floor Price Protection**: Vendor minimum price enforcement
 - **Real-time Cart Sync**: Live cart updates between users
 
+## 📸 Application Screenshots
+
+### Vendor Dashboard
+![Vendor Dashboard](images/image_1.png)
+*AI-powered inventory management with live pricing and multilingual support*
+
+### Customer Shopping Interface
+![Customer Interface](images/image_2.png)
+*Real-time product browsing with cultural translation and voice integration*
+
 ## 🚀 Quick Start
 
 ### Prerequisites
