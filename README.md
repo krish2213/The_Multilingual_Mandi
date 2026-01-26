@@ -32,13 +32,21 @@ A sophisticated real-time negotiation platform for local trade with AI-powered p
 
 ## 📸 Application Screenshots
 
-### Vendor Dashboard
-![Vendor Dashboard](images/image_1.png)
+<div align="center">
+
+<img src="images/image_1.png" alt="Vendor Dashboard" width="400"/>
+
+**Vendor Dashboard**  
 *AI-powered inventory management with live pricing and multilingual support*
 
-### Customer Shopping Interface
-![Customer Interface](images/image_2.png)
+<br><br>
+
+<img src="images/image_2.png" alt="Customer Interface" width="400"/>
+
+**Customer Shopping Interface**  
 *Real-time product browsing with cultural translation and voice integration*
+
+</div>
 
 ## 🚀 Quick Start
 
