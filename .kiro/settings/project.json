@@ -1,0 +1,175 @@
+{
+  "project": {
+    "name": "Multilingual Mandi",
+    "description": "AI-powered multilingual marketplace platform for Indian local trade",
+    "version": "1.0.0",
+    "type": "full-stack-web-application",
+    "primaryLanguage": "javascript",
+    "framework": {
+      "backend": "express",
+      "frontend": "react",
+      "realtime": "socket.io"
+    }
+  },
+  "ai": {
+    "provider": "google-gemini",
+    "model": "gemini-2.5-flash",
+    "services": [
+      "pricing",
+      "translation",
+      "negotiation",
+      "product-generation"
+    ],
+    "configuration": {
+      "temperature": {
+        "pricing": 0.3,
+        "translation": 0.7,
+        "negotiation": 0.8,
+        "products": 0.5
+      },
+      "maxTokens": {
+        "pricing": 20,
+        "translation": 200,
+        "negotiation": 150,
+        "products": 100
+      },
+      "fallbackPolicy": "none",
+      "keyRotation": true
+    }
+  },
+  "localization": {
+    "supportedLanguages": [
+      {
+        "code": "en",
+        "name": "English",
+        "nativeName": "English",
+        "region": "en-IN",
+        "primary": true
+      },
+      {
+        "code": "hi",
+        "name": "Hindi",
+        "nativeName": "हिन्दी",
+        "region": "hi-IN",
+        "script": "Devanagari"
+      },
+      {
+        "code": "ta",
+        "name": "Tamil",
+        "nativeName": "தமிழ்",
+        "region": "ta-IN",
+        "script": "Tamil"
+      }
+    ],
+    "culturalAdaptation": {
+      "indirectSpeech": true,
+      "marketContext": "indian-mandi",
+      "politenessLevel": "high",
+      "bargainingCulture": true
+    }
+  },
+  "marketplace": {
+    "categories": [
+      "vegetables",
+      "fruits"
+    ],
+    "pricingModel": "ai-dynamic",
+    "negotiationRounds": 3,
+    "floorPriceProtection": true,
+    "realTimeSync": true
+  },
+  "development": {
+    "environment": "development",
+    "hotReload": true,
+    "debugging": {
+      "aiServices": true,
+      "apiEndpoints": true,
+      "socketEvents": true
+    },
+    "testing": {
+      "aiDebugScript": "npm run debug-ai",
+      "apiTestScript": "npm run test-api",
+      "healthCheck": "/api/health"
+    }
+  },
+  "deployment": {
+    "target": "production",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "environmentVariables": [
+      "GEMINI_API_KEY_1",
+      "GEMINI_API_KEY_2",
+      "GEMINI_API_KEY_3",
+      "PORT",
+      "NODE_ENV",
+      "CLIENT_URL",
+      "DEFAULT_LOCATION"
+    ]
+  },
+  "quality": {
+    "codeStandards": {
+      "aiOnly": true,
+      "noFallbacks": true,
+      "culturalSensitivity": true,
+      "errorHandling": "graceful"
+    },
+    "performance": {
+      "aiResponseTime": "< 5s",
+      "apiKeyRotation": "automatic",
+      "sessionManagement": "memory-based"
+    },
+    "security": {
+      "apiKeyProtection": true,
+      "inputValidation": true,
+      "corsConfiguration": true,
+      "sessionIsolation": true
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "ai-service-success-rate",
+      "translation-accuracy",
+      "negotiation-completion-rate",
+      "price-generation-speed",
+      "user-satisfaction"
+    ],
+    "logging": {
+      "aiResponses": true,
+      "apiErrors": true,
+      "sessionEvents": true,
+      "performanceMetrics": true
+    }
+  },
+  "integrations": {
+    "aiProvider": {
+      "name": "Google Gemini",
+      "version": "2.5-flash",
+      "apiEndpoint": "https://generativelanguage.googleapis.com",
+      "authentication": "api-key"
+    },
+    "realtime": {
+      "name": "Socket.IO",
+      "version": "4.7.2",
+      "features": [
+        "session-management",
+        "real-time-messaging",
+        "cart-synchronization",
+        "negotiation-events"
+      ]
+    }
+  },
+  "documentation": {
+    "readme": "README.md",
+    "apiDocs": "Available via /api endpoints",
+    "steeringFiles": [
+      "ai-pricing.md",
+      "translation.md",
+      "negotiation.md"
+    ],
+    "examples": {
+      "priceGeneration": "npm run debug-ai",
+      "apiTesting": "npm run test-api",
+      "fullFlow": "npm run dev"
+    }
+  }
+}
