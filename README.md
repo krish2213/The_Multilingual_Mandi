@@ -1,12 +1,6 @@
 # 🛒 Multilingual Mandi - AI-Powered Marketplace Platform
 
 A sophisticated real-time negotiation platform for local trade with AI-powered pricing, multilingual support (5 languages), and cultural adaptation for Indian markets.
-## Demonstration
-## 🎥 Demo Preview
-
-![SahaKriya Dashboard](public/static/images/demo1.png)
-
-![SahaKriya Customer Setup](public/static/images/demo2.png)
 
 ## 🌟 Key Features
 
@@ -39,6 +33,11 @@ A sophisticated real-time negotiation platform for local trade with AI-powered p
 - **Floor Price Protection**: Vendor minimum price enforcement
 - **Stock Validation**: Prevents overselling with real-time stock checks
 - **Payment Integration**: UPI (Razorpay) + Cash payment options
+## Demonstration
+
+![SahaKriya Dashboard](public/static/images/demo1.png)
+
+![SahaKriya Customer Setup](public/static/images/demo2.png)
 
 ## 🏗️ Architecture
 
