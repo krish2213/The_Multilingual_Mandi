@@ -3,7 +3,7 @@
 A sophisticated real-time negotiation platform for local trade with AI-powered pricing, multilingual support (5 languages), and cultural adaptation for Indian markets.
 
 <p align="center">
-  <img src="public/static/images/SahaKriya.png" width="120" height="120" />
+  <img src="public/static/images/SahaKriya.png" width="180" height="180" />
 </p>
 
 
