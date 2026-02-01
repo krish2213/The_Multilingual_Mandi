@@ -2,19 +2,9 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 class NegotiationAgent {
   constructor() {
-    // Load multiple API keys for rotation
-    this.apiKeys = [
-      process.env.GEMINI_API_KEY_1,
-      process.env.GEMINI_API_KEY_2,
-      process.env.GEMINI_API_KEY_3
-    ].filter(key => key && key !== 'your_new_gemini_api_key_here' && key !== 'your_second_new_gemini_api_key_here' && key !== 'your_third_new_gemini_api_key_here');
-    
-    this.currentKeyIndex = 0;
-    
-    if (this.apiKeys.length === 0) {
-      throw new Error('❌ NO GEMINI API KEYS FOUND! Add working keys to .env file. Negotiation cannot work without AI.');
-    }
-    
+    this.negotiationKey = process.env.GEMINI_NEGOTIATION_KEY;
+    this.translationKey = process.env.GEMINI_TRANSLATION_KEY;
+
     this.initializeModel();
     
     // Store floor prices and negotiation states per session
@@ -22,28 +12,30 @@ class NegotiationAgent {
   }
 
   initializeModel() {
-    const currentKey = this.apiKeys[this.currentKeyIndex];
-    this.genAI = new GoogleGenerativeAI(currentKey);
-    // STRICTLY use gemini-2.5-flash model as requested
-    this.model = this.genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
+    this.genAI = new GoogleGenerativeAI(this.negotiationKey);
+
+    this.negotiationModel = this.genAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash-lite",
       generationConfig: {
         temperature: 0.8,
         topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 150
+        topK: 40
       }
     });
-    console.log(`✓ Negotiation Agent initialized with gemini-2.5-flash (API key ${this.currentKeyIndex + 1})`);
+    console.log(`✓ Negotiation Agent initialized (Dedicated NEGOTIATION key)`);
+    this.translationAI = new GoogleGenerativeAI(this.translationKey);
+    this.translationModel = this.translationAI.getGenerativeModel({
+    model: "gemini-2.5-flash-lite",
+    generationConfig: {
+      temperature: 0.2
+    }
+  });
+
+  console.log('✓ Translation model initialized (TRANSLATION KEY)');
+
   }
 
-  rotateAPIKey() {
-    if (this.apiKeys.length > 1) {
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
-      console.log(`🔄 NegotiationAgent: Rotating to API key ${this.currentKeyIndex + 1}`);
-      this.initializeModel();
-    }
-  }
+
 
   initializeSession(sessionId, vendorFloorPrices) {
     this.sessionStates.set(sessionId, {
@@ -54,7 +46,7 @@ class NegotiationAgent {
     console.log(`✓ Negotiation session initialized for ${sessionId} with floor prices:`, vendorFloorPrices);
   }
 
-  async handleNegotiation(sessionId, productId, customerOffer, marketPrice, round = 1) {
+  async handleNegotiation(sessionId, productId, customerOffer, marketPrice, round = 1, customerLanguage='en') {
     const sessionState = this.sessionStates.get(sessionId);
     if (!sessionState) {
       throw new Error('Session not initialized - floor prices not set');
@@ -87,150 +79,216 @@ class NegotiationAgent {
 
     console.log(`💬 Negotiation for ${productId}: Customer ₹${customerOffer}, Floor ₹${floorPrice}, Round ${round}`);
 
-    // Decision logic
+    // FIRST: Check if offer meets or exceeds floor price - REQUIRE VENDOR APPROVAL
     if (customerOffer >= floorPrice) {
-      negotiationState.status = 'accepted';
+      negotiationState.status = 'pending_vendor_approval';
       return {
-        action: 'accept',
-        finalPrice: customerOffer,
-        message: 'Offer accepted! Thank you for your business.',
-        round
+        action: 'pending_vendor_approval',
+        proposedPrice: customerOffer,
+        floorPrice: floorPrice,
+        marketPrice: marketPrice,
+        message: 'Customer offer is above floor price. Awaiting vendor approval.',
+        round,
+        requiresVendorApproval: true
       };
     }
 
-    // Round 1: Polite indirect counter-offer
-    if (round === 1) {
-      const counterOffer = await this.generatePoliteCounterOffer(
-        customerOffer, 
-        floorPrice, 
-        marketPrice, 
-        productId
-      );
-      
-      return {
-        action: 'counter',
-        counterOffer: counterOffer.price,
-        message: counterOffer.message,
-        round: round + 1
-      };
+    // SECOND: Handle below floor price with AI counter-offers
+    if (customerOffer < floorPrice) {
+      // Always use AI counter-offers for below floor prices (all rounds)
+      try {
+        console.log(`🤖 Generating AI counter-offer for ${productId} (Round ${round}) - Below floor price`);
+        console.log(`🤖 Parameters: customerOffer=₹${customerOffer}, floorPrice=₹${floorPrice}, marketPrice=₹${marketPrice}`);
+        const aiResponse = await this.generatePoliteCounterOffer(customerOffer, floorPrice, marketPrice, productId, round, customerLanguage);
+        const translatedMessage = await this.translateMessage(
+            aiResponse.message,
+            customerLanguage);
+        console.log(`🤖 AI Response received:`, aiResponse);
+        
+        negotiationState.status = round >= 3 ? 'negotiation_limit_exceeded' : 'ai_counter_offer';
+        return {
+            action: round >= 3 ? 'negotiation_limit_exceeded' : 'ai_counter_offer',
+            proposedPrice: customerOffer,
+            floorPrice,
+            marketPrice,
+            message: translatedMessage, 
+            round,
+            aiGenerated: true,
+            allowContinueNegotiation: round < 3,
+            isLimitExceeded: round >= 3
+          };
+      } catch (error) {
+        console.error('❌ AI counter-offer failed:', error.message);
+        
+        // Fallback message for AI failure
+        const fallbackMessage = round >= 3 
+          ? `Your proposed price of ₹${customerOffer}/kg is too low for this quality product. Your price negotiation limit has been exceeded.`
+          : `Your proposed price of ₹${customerOffer}/kg is too low for this quality product. Please consider a more reasonable offer.`;
+          
+        return {
+          action: round >= 3 ? 'negotiation_limit_exceeded' : 'below_floor',
+          proposedPrice: customerOffer,
+          message: fallbackMessage,
+          round,
+          allowContinueNegotiation: round < 3,
+          isLimitExceeded: round >= 3
+        };
+      }
     }
 
-    // Round 2: Locked final offer (reveal floor price)
-    if (round === 2) {
-      negotiationState.lockedFinalOffer = true;
-      negotiationState.status = 'final_offer';
-      
-      return {
-        action: 'final_offer',
-        finalPrice: floorPrice,
-        message: `This is my absolute minimum price: ₹${floorPrice}. I cannot go lower than this to maintain quality and cover my costs. Please consider this as my final offer.`,
-        round: round + 1,
-        isLocked: true
-      };
-    }
-
-    // Round 3+: Reject if still below floor
-    if (round >= 3 && customerOffer < floorPrice) {
-      negotiationState.status = 'rejected';
-      return {
-        action: 'reject',
-        message: 'I\'m sorry, but I cannot accept this price as it is below my costs. Thank you for your interest.',
-        round
-      };
-    }
-
+    // This shouldn't be reached, but keeping as fallback
     return {
-      action: 'reject',
-      message: 'Unable to proceed with this negotiation at the current price.',
+      action: 'pending_vendor',
+      message: 'Customer has proposed a new price.',
       round
     };
   }
+  async translateMessage(message, targetLanguage) {
+            if (!targetLanguage || targetLanguage === 'en') {
+              return message;
+            }
 
-  async generatePoliteCounterOffer(customerOffer, floorPrice, marketPrice, productId) {
-    const strategicPrice = Math.round(customerOffer + (marketPrice - customerOffer) * 0.6);
-    const suggestedPrice = Math.max(strategicPrice, floorPrice);
+            const LANGUAGE_MAP = {
+              ta: 'Tamil',
+              hi: 'Hindi',
+              te: 'Telugu',
+              kn: 'Kannada',
+              ml: 'Malayalam'
+            };
 
-    const prompt = `You are a polite vegetable vendor in an Indian market (mandi).
+            const languageName = LANGUAGE_MAP[targetLanguage];
+            if (!languageName) return message;
 
-SITUATION:
-- Product: ${productId}
-- Customer offered: ₹${customerOffer}
-- Your minimum price: ₹${floorPrice}
-- Market price: ₹${marketPrice}
+            const prompt = `
+          You are a native ${languageName} speaker.
+          Translate the following message into ${languageName}.
+          Keep it polite and natural.
+          Do NOT explain.
+          Do NOT add extra text or your thoughts.
+          ACT LIKE A SIMPLE TRANSLATOR THAT SPITS ONLY TRANSLATED TEXT.
+          TEXT:
+          "${message}"
+          `;
 
-TASK: Generate a polite counter-offer suggesting ₹${suggestedPrice}.
+            try {
+              const result = await this.translationModel.generateContent(prompt);
+              return result.response.text().trim();
+            } catch (err) {
+              console.error('❌ Translation failed:', err.message);
+              return message; // fallback to English
+            }
+          }
 
-REQUIREMENTS:
-- Use warm, respectful language
-- Explain value naturally (freshness, quality)
-- Maintain good relationship
-- Culturally appropriate for Indian markets
-- Do NOT reveal your minimum price
 
-Respond in this exact format:
-PRICE: ${suggestedPrice}
-MESSAGE: [Your polite counter-offer message here]
+  async generatePoliteCounterOffer(customerOffer, floorPrice, marketPrice, productId, round,customerLanguage) {
+    const avg = Math.round((floorPrice + marketPrice) / 2);
+    const rangeMin = avg - 1;
+    const rangeMax = avg + 1;
 
-EXAMPLE:
-PRICE: 65
-MESSAGE: I understand your budget, but considering the freshness and quality of this produce, could we meet at ₹65? This ensures you get the best product.
+    
+    // If round 3 and still below floor, add limit exceeded message
+    const limitExceededMessage = round >= 3 ? " Your price negotiation limit has been exceeded." : "";
+    const prompt = `
+                      SITUATION:
+                      - Product: ${productId}
+                      - Customer offered: ₹${customerOffer}
+                      - Market price: ₹${marketPrice}
+                      - Round: ${round}
 
-Now generate the counter-offer.`;
+                      TASK: Generate a polite counter-offer suggesting a price range 
+                    from ₹${rangeMin} to ₹${rangeMax}.
+
+                      REQUIREMENTS:
+                      - Use warm, respectful language
+                      - Suggest this specific price RANGE (₹${rangeMin} to ₹${rangeMax})
+                      - Explain value naturally (freshness, quality) of the product
+                      - Focus on quality and market value
+                      
+                        Now generate the counter-offer. Without adding your response thoughts. 
+                        JUST STRAIGHT 3 LINE (STRICTLY LESS THAN 30 WORDS - STRAIGHT TO POINT) DRAFT ABOUT 
+                        Value, Range Nudging, and ${limitExceededMessage}
+
+                        VERY STRICTLY FOLLOW THIS: format (response.match(/MESSAGE:\s*(.+)/s);)
+                        MESSAGE: [Your polite counter-offer message with price range ₹${rangeMin} to ₹${rangeMax}] ${limitExceededMessage}`;
+
+                      
+                        
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const response = result.response;
-      const responseText = response.text();
+      const result = await this.negotiationModel.generateContent(prompt);
+      const response = result.response.text().trim();
       
-      console.log('✓ Counter-offer AI response received');
-
-      // Parse the structured response
-      const priceMatch = responseText.match(/PRICE:\s*(\d+)/);
-      const messageMatch = responseText.match(/MESSAGE:\s*(.+?)$/s);
+      // Parse the response
+      const messageMatch = response.match(/MESSAGE:\s*(.+)/s);
       
-      const aiPrice = priceMatch ? parseInt(priceMatch[1]) : suggestedPrice;
-      const aiMessage = messageMatch ? messageMatch[1].trim() : null;
+      const fallbackMessage = `The price is too low. Propose a better price.${limitExceededMessage}`;
       
-      if (!aiMessage) {
-        throw new Error('AI failed to provide proper counter-offer format');
+      if (messageMatch) {
+        return {
+          message: messageMatch[1].trim()
+        };
+      }  else {
+        // AI response format completely unexpected - use fallback price and message
+        console.warn('⚠️ AI response format completely unexpected:', response);
+        return {
+          message: fallbackMessage
+        };
       }
+    } catch (error) {
+      console.error('❌ Counter-offer generation failed:', error.message);
       
       return {
-        price: aiPrice,
-        message: aiMessage
+        message: fallbackMessage
       };
-    } catch (error) {
-      console.error('❌ Error generating counter-offer:', error.message);
-      
-      if (error.message.includes('quota') || error.message.includes('rate limit') || error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED')) {
-        this.rotateAPIKey();
-        
-        try {
-          const result = await this.model.generateContent(prompt);
-          const response = result.response;
-          const responseText = response.text();
-          
-          const priceMatch = responseText.match(/PRICE:\s*(\d+)/);
-          const messageMatch = responseText.match(/MESSAGE:\s*(.+?)$/s);
-          
-          const aiPrice = priceMatch ? parseInt(priceMatch[1]) : suggestedPrice;
-          const aiMessage = messageMatch ? messageMatch[1].trim() : null;
-          
-          if (!aiMessage) {
-            throw new Error('AI retry also failed to provide proper format');
-          }
-          
-          return {
-            price: aiPrice,
-            message: aiMessage
-          };
-        } catch (retryError) {
-          console.error('❌ Counter-offer retry failed:', retryError.message);
-          throw new Error(`AI negotiation failed completely: ${retryError.message}`);
-        }
-      }
-      
-      throw new Error(`AI counter-offer generation failed: ${error.message}`);
+    }
+  }
+
+  handleVendorResponse(sessionId, productId, response, customMessage = null) {
+    const sessionState = this.sessionStates.get(sessionId);
+    if (!sessionState) {
+      throw new Error('Session not initialized');
+    }
+
+    const negotiationState = sessionState.negotiations.get(productId);
+    if (!negotiationState) {
+      throw new Error('No active negotiation found for this product');
+    }
+
+    const lastOffer = negotiationState.offers[negotiationState.offers.length - 1];
+    if (!lastOffer) {
+      throw new Error('No customer offer found');
+    }
+
+    console.log(`🏪 Vendor response for ${productId}: ${response}`);
+
+    switch (response) {
+      case 'accept':
+        negotiationState.status = 'accepted';
+        return {
+          action: 'accepted',
+          finalPrice: lastOffer.customerOffer,
+          message: 'Vendor has accepted your offer! Thank you for your business.',
+          agreedPrice: lastOffer.customerOffer
+        };
+
+      case 'reject':
+        negotiationState.status = 'rejected';
+        return {
+          action: 'rejected',
+          message: 'Vendor has rejected your offer. You can try proposing a different price or send a message to discuss.',
+          proposedPrice: lastOffer.customerOffer
+        };
+
+      case 'custom_message':
+        negotiationState.status = 'custom_message';
+        return {
+          action: 'custom_message',
+          message: customMessage || 'Vendor has sent you a message.',
+          proposedPrice: lastOffer.customerOffer
+        };
+
+      default:
+        throw new Error(`Invalid vendor response: ${response}`);
     }
   }
 
@@ -247,6 +305,11 @@ Now generate the counter-offer.`;
       sessionState.floorPrices[productId] = newFloorPrice;
       console.log(`✓ Updated floor price for ${productId} in session ${sessionId}: ₹${newFloorPrice}`);
     }
+  }
+
+  getFloorPrices(sessionId) {
+    const sessionState = this.sessionStates.get(sessionId);
+    return sessionState ? sessionState.floorPrices : null;
   }
 
   clearSession(sessionId) {

@@ -109,13 +109,15 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
-  const proposePrice = (productId, proposedPrice, round) => {
+  const proposePrice = (productId, proposedPrice, round, marketPrice,language) => {
     if (socket && session) {
       socket.emit('propose-price', {
         sessionId: session.id,
         productId,
         proposedPrice,
-        round
+        round,
+        marketPrice,
+        language
       });
     }
   };
@@ -127,6 +129,16 @@ export const SocketProvider = ({ children }) => {
         negotiationId,
         response,
         finalPrice
+      });
+    }
+  };
+
+  const addNewProducts = (newProducts, newFloorPrices) => {
+    if (socket && session) {
+      socket.emit('add-new-products', {
+        sessionId: session.id,
+        newProducts,
+        newFloorPrices
       });
     }
   };
@@ -151,6 +163,7 @@ export const SocketProvider = ({ children }) => {
     createSession,
     joinSession,
     updateInventory,
+    addNewProducts,
     requestProducts,
     proposePrice,
     respondToNegotiation,

@@ -1,30 +1,28 @@
-// Enhanced Speech Utilities with better browser support and error handling
+// Enhanced Speech Utilities with ResponsiveVoice TTS
+// Completely replaces browser TTS with ResponsiveVoice for better multilingual support
 
 class SpeechUtils {
   constructor() {
     this.recognition = null;
-    this.synthesis = window.speechSynthesis;
     this.isListening = false;
-    this.voices = [];
+    this.isSpeaking = false;
     
-    // Initialize voices
-    this.loadVoices();
-    
-    // Handle voices loaded event
-    if (this.synthesis) {
-      this.synthesis.onvoiceschanged = () => {
-        this.loadVoices();
-      };
-    }
+    // ResponsiveVoice voice mappings for consistent male voices
+    this.voiceMap = {
+      'en': 'UK English Male',
+      'hi': 'Hindi Male',
+      'ta': 'Tamil Male',
+      'te': 'Telugu Male',
+      'kn': 'Kannada Male',
+      'ml': 'Malayalam Male',
+      'bn': 'Bengali Male',
+      'gu': 'Gujarati Male',
+      'mr': 'Marathi Male',
+      'pa': 'Punjabi Male'
+    };
   }
 
-  loadVoices() {
-    if (this.synthesis) {
-      this.voices = this.synthesis.getVoices();
-    }
-  }
-
-  // Initialize Speech Recognition
+  // Initialize Speech Recognition (keep existing functionality)
   initializeSpeechRecognition(language = 'en-US', onResult, onError, onEnd) {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       throw new Error('Speech recognition not supported in this browser');
@@ -86,102 +84,91 @@ class SpeechUtils {
     return false;
   }
 
-  // Text-to-Speech
+  // Text-to-Speech using ResponsiveVoice
   speak(text, options = {}) {
-    if (!this.synthesis) {
-      throw new Error('Speech synthesis not supported in this browser');
+    if (!window.responsiveVoice) {
+      console.error('ResponsiveVoice not loaded yet');
+      
+      // Try to wait for ResponsiveVoice to load
+      const waitForRV = (attempts = 0) => {
+        if (attempts > 10) {
+          throw new Error('ResponsiveVoice not available after waiting');
+        }
+        
+        if (window.responsiveVoice) {
+          this.speak(text, options); // Retry the speak call
+        } else {
+          setTimeout(() => waitForRV(attempts + 1), 500);
+        }
+      };
+      
+      waitForRV();
+      return;
     }
 
-    // Cancel any ongoing speech
-    this.synthesis.cancel();
+    // Stop any ongoing speech
+    this.stopSpeaking();
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Set options
-    utterance.lang = options.lang || 'en-US';
-    utterance.rate = options.rate || 0.9;
-    utterance.pitch = options.pitch || 1;
-    utterance.volume = options.volume || 1;
-
-    // Find appropriate voice
-    const preferredVoice = this.findVoice(utterance.lang, options.voiceGender);
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-    }
-
-    // Event handlers
-    if (options.onStart) {
-      utterance.onstart = options.onStart;
-    }
-    
-    if (options.onEnd) {
-      utterance.onend = options.onEnd;
-    }
-    
-    if (options.onError) {
-      utterance.onerror = options.onError;
-    }
-
-    this.synthesis.speak(utterance);
-    return utterance;
-  }
-
-  // Find the best voice for a language
-  findVoice(language, preferredGender = null) {
+    // Get language from options
+    const language = options.lang || 'en-US';
     const langCode = language.split('-')[0];
     
-    // Filter voices by language
-    let matchingVoices = this.voices.filter(voice => 
-      voice.lang.startsWith(langCode) || voice.lang.startsWith(language)
-    );
+    // Get appropriate voice
+    const voiceName = this.voiceMap[langCode] || 'UK English Male';
+    
+    console.log('🔊 ResponsiveVoice speaking:', text, 'with voice:', voiceName);
 
-    if (matchingVoices.length === 0) {
-      // Fallback to any voice
-      matchingVoices = this.voices;
-    }
-
-    // Prefer local voices
-    const localVoices = matchingVoices.filter(voice => voice.localService);
-    if (localVoices.length > 0) {
-      matchingVoices = localVoices;
-    }
-
-    // Apply gender preference if specified
-    if (preferredGender && matchingVoices.length > 1) {
-      const genderVoices = matchingVoices.filter(voice => 
-        voice.name.toLowerCase().includes(preferredGender.toLowerCase())
-      );
-      if (genderVoices.length > 0) {
-        matchingVoices = genderVoices;
+    // ResponsiveVoice options
+    const rvOptions = {
+      pitch: options.pitch || 1,
+      rate: options.rate || 0.9,
+      volume: options.volume || 1,
+      onstart: () => {
+        this.isSpeaking = true;
+        if (options.onStart) options.onStart();
+      },
+      onend: () => {
+        this.isSpeaking = false;
+        if (options.onEnd) options.onEnd();
+      },
+      onerror: () => {
+        this.isSpeaking = false;
+        if (options.onError) options.onError();
       }
-    }
+    };
 
-    return matchingVoices[0] || null;
+    // Speak using ResponsiveVoice
+    window.responsiveVoice.speak(text, voiceName, rvOptions);
+    
+    return { text, voiceName, options: rvOptions };
   }
 
   // Stop current speech
   stopSpeaking() {
-    if (this.synthesis) {
-      this.synthesis.cancel();
+    if (window.responsiveVoice) {
+      window.responsiveVoice.cancel();
+      this.isSpeaking = false;
     }
   }
 
   // Check if currently speaking
   isSpeaking() {
-    return this.synthesis ? this.synthesis.speaking : false;
+    return this.isSpeaking || (window.responsiveVoice && window.responsiveVoice.isPlaying());
   }
 
-  // Get available voices
+  // Get available voices (ResponsiveVoice voices)
   getVoices() {
-    return this.voices;
+    if (window.responsiveVoice) {
+      return window.responsiveVoice.getVoices();
+    }
+    return [];
   }
 
   // Get voices for a specific language
   getVoicesForLanguage(language) {
     const langCode = language.split('-')[0];
-    return this.voices.filter(voice => 
-      voice.lang.startsWith(langCode) || voice.lang.startsWith(language)
-    );
+    const voiceName = this.voiceMap[langCode];
+    return voiceName ? [{ name: voiceName, lang: language }] : [];
   }
 
   // Language code mapping
@@ -201,13 +188,25 @@ class SpeechUtils {
     return langMap[language] || language || 'en-US';
   }
 
-  // Check browser support
+  // Check browser support (ResponsiveVoice support)
   static checkSupport() {
     return {
       speechRecognition: ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window),
-      speechSynthesis: 'speechSynthesis' in window,
+      speechSynthesis: !!window.responsiveVoice, // ResponsiveVoice instead of browser TTS
       getUserMedia: 'getUserMedia' in navigator.mediaDevices
     };
+  }
+
+  // Test ResponsiveVoice availability
+  static testResponsiveVoice() {
+    if (!window.responsiveVoice) {
+      console.error('❌ ResponsiveVoice not loaded. Please check the script tag.');
+      return false;
+    }
+    
+    console.log('✅ ResponsiveVoice loaded successfully');
+    console.log('🎤 Available voices:', window.responsiveVoice.getVoices().map(v => v.name));
+    return true;
   }
 }
 

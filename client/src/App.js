@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { SocketProvider, useSocket } from './contexts/SocketContext';
 import RoleSelector from './components/RoleSelector';
@@ -12,16 +12,15 @@ import './i18n';
 function AppContent() {
   const [currentView, setCurrentView] = useState('role-selector');
   const [vendorData, setVendorData] = useState({});
-  const { session, role } = useSocket();
 
-  // ❌ REMOVED THE BUGGY useEffect THAT WAS SKIPPING INVENTORY!
-  // The manual navigation is enough - we don't need auto-switching
-
-  const handleRoleSelect = (selectedRole) => {
+  const handleRoleSelect = (selectedRole, selectedLanguage) => {
     if (selectedRole === 'vendor') {
       setCurrentView('vendor-setup');
+      setVendorData(prev => ({ ...prev, language: selectedLanguage }));
     } else {
       setCurrentView('customer-entry');
+      // Store language for customer flow
+      setVendorData(prev => ({ ...prev, customerLanguage: selectedLanguage }));
     }
   };
 
@@ -31,13 +30,26 @@ function AppContent() {
     setCurrentView('inventory-management');
   };
 
-  const handleInventoryComplete = (products) => {
+  const handleInventoryComplete = (products, isAddingNew = false) => {
     console.log('✓ Inventory complete, showing dashboard');
-    setVendorData(prev => ({ ...prev, products }));
+    
+    if (isAddingNew) {
+      // When adding new products, merge with existing products
+      setVendorData(prev => ({ 
+        ...prev, 
+        products: [...(prev.products || []), ...products]
+      }));
+      console.log(`✓ Merged ${products.length} new products with existing inventory`);
+    } else {
+      // Initial setup - replace products
+      setVendorData(prev => ({ ...prev, products }));
+      console.log(`✓ Set initial inventory with ${products.length} products`);
+    }
+    
     setCurrentView('vendor-dashboard');
   };
 
-  const handleCustomerJoinSuccess = (joinData) => {
+  const handleCustomerJoinSuccess = () => {
     console.log('✓ Customer joined, showing shopping');
     setCurrentView('customer-shopping');
   };
@@ -48,22 +60,29 @@ function AppContent() {
         return <RoleSelector onRoleSelect={handleRoleSelect} />;
       
       case 'vendor-setup':
-        return <VendorSetup onSetupComplete={handleVendorSetupComplete} />;
+        return <VendorSetup onSetupComplete={handleVendorSetupComplete} preSelectedLanguage={vendorData.language} />;
       
       case 'inventory-management':
         console.log('📦 Rendering Inventory Management with categories:', vendorData.categories);
         return (
           <InventoryManagement 
             categories={vendorData.categories}
-            onInventoryComplete={handleInventoryComplete}
+            existingProducts={vendorData.products || []}
+            onInventoryComplete={(products, isAddingNew) => handleInventoryComplete(products, isAddingNew)}
           />
         );
       
       case 'vendor-dashboard':
-        return <VendorDashboard products={vendorData.products || []} />;
+        return (
+          <VendorDashboard 
+            products={vendorData.products || []} 
+            onAddMoreProducts={() => setCurrentView('inventory-management')}
+            onProductsUpdate={(products) => setVendorData(prev => ({ ...prev, products }))}
+          />
+        );
       
       case 'customer-entry':
-        return <CustomerEntry onJoinSuccess={handleCustomerJoinSuccess} />;
+        return <CustomerEntry onJoinSuccess={handleCustomerJoinSuccess} preSelectedLanguage={vendorData.customerLanguage} />;
       
       case 'customer-shopping':
         return <CustomerShopping />;

@@ -1,181 +1,153 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const MessageSchema = {
-  type: "object",
-  properties: {
-    indirectMessage: { 
-      type: "string", 
-      description: "The polite, third-person version of the message in the recipient's language" 
-    },
-    detectedSentiment: { 
-      type: "string", 
-      enum: ["positive", "neutral", "frustrated", "negotiating"],
-      description: "The emotional tone of the original message"
-    }
-  },
-  required: ["indirectMessage", "detectedSentiment"]
-};
 class MessageTransformService {
   constructor() {
-    this.apiKey = process.env.GEMINI_API_KEY_3;
-    const ai = new GoogleGenerativeAI(this.apiKey);
+    const politeApiKey = process.env.GEMINI_POLITE_KEY;
+    const translateApiKey = process.env.GEMINI_TRANSLATE_KEY;
     
-    // Using 2.5-flash for better Indic language reasoning
-    this.model = ai.getGenerativeModel({
-      model: 'gemini-2.5-flash',
+    if (!politeApiKey || politeApiKey === 'your_new_gemini_api_key_here') {
+      throw new Error('❌ NO GEMINI_POLITE_KEY FOUND! Add GEMINI_POLITE_KEY to .env file.');
+    }
+    
+    if (!translateApiKey || translateApiKey === 'your_new_gemini_api_key_here') {
+      throw new Error('❌ NO GEMINI_TRANSLATE_KEY FOUND! Add GEMINI_TRANSLATE_KEY to .env file.');
+    }
+    
+    this.initializeModels(politeApiKey, translateApiKey);
+  }
+
+  initializeModels(politeApiKey, translateApiKey) {
+    const politeGenAI = new GoogleGenerativeAI(politeApiKey);
+    const translateGenAI = new GoogleGenerativeAI(translateApiKey);
+    
+    // Dedicated model for translation
+    this.translationModel = translateGenAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash",
       generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: MessageSchema,
-        temperature: 0.1
+        temperature: 0.7,
+        topP: 0.95,
+        maxOutputTokens: 1000,
+        topK: 40
       }
     });
+    
+    this.politeModel = politeGenAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash-lite",
+      generationConfig: {
+        temperature: 0.8,
+        topP: 0.95,
+        maxOutputTokens: 1000,
+        topK: 40
+      }
+    });
+    
+    console.log('✅ Message Transform initialized with dedicated models (gemini-2.5-flash)');
   }
 
-  async transformMessage(text, senderRole, recipientLanguage, senderLanguage = null) {
-    // Step 1: Detect language if not provided
-    let detectedLanguage = senderLanguage;
-    if (!detectedLanguage) {
-      detectedLanguage = await this.detectLanguage(text);
-    }
+  async transformMessage(text, senderRole, senderLanguage, recipientLanguage) {
+    console.log(`🔄 Transform: "${text}" from ${senderLanguage} to ${recipientLanguage}`);
     
-    console.log(`🌐 Language: ${detectedLanguage} → ${recipientLanguage}`);
-    
-    // Step 2: If languages are the same, just format without translation
-    if (detectedLanguage.toLowerCase() === recipientLanguage.toLowerCase()) {
-      return await this.formatMessageOnly(text, senderRole, recipientLanguage);
-    }
-    
-    // Step 3: Translate and format
-    const prompt = `
-      You are a professional marketplace mediator.
-      
-      ORIGINAL MESSAGE from ${senderRole}: "${text}"
-      ORIGINAL LANGUAGE: ${detectedLanguage}
-      TARGET LANGUAGE: ${recipientLanguage}
-      RECIPIENT SPEAKS: ${recipientLanguage}
-      
-      TASK:
-      1. DETECT the emotional tone of the original message
-      2. TRANSLATE the message from ${detectedLanguage} to ${recipientLanguage}
-      3. CONVERT to polite third-person formal speech
-      4. REMOVE all slang and informal expressions
-      
-      IMPORTANT: Output must be in ${recipientLanguage}
-      
-      OUTPUT FORMAT (JSON):
-      {
-        "indirectMessage": "The translated and formatted message in ${recipientLanguage}",
-        "detectedSentiment": "positive|neutral|frustrated|negotiating"
-      }
-      
-      EXAMPLES:
-      
-      Example 1 (Tamil → English):
-      Original: "சிறிது விலையை குறையுங்கள்"
-      Output: {
-        "indirectMessage": "The customer is requesting a slight reduction in the price.",
-        "detectedSentiment": "negotiating"
-      }
-      
-      Example 2 (Hindi → English):
-      Original: "थोड़ा कम कर दो भाई"
-      Output: {
-        "indirectMessage": "The customer is asking for a small reduction in the price.",
-        "detectedSentiment": "negotiating"
-      }
-      
-      Example 3 (English → Tamil):
-      Original: "Can you reduce the price?"
-      Output: {
-        "indirectMessage": "வாடிக்கையாளர் விலையை குறைக்குமாறு கேட்டுக்கொள்கிறார்.",
-        "detectedSentiment": "negotiating"
-      }
-    `;
+    try {
+      // CHECKPOINT: If both languages are the same, skip translation and only do polite conversion
+      if (senderLanguage === recipientLanguage) {
+        console.log(`✅ Same language detected (${senderLanguage}), skipping translation - only polite conversion`);
+        
+        const politePrompt = `Convert this ${senderLanguage} message to polite third-person speech for an Indian marketplace:
 
-    try {
-      const result = await this.model.generateContent(prompt);
-      const responseText = result.response.text();
-      const cleanedText = responseText.replace(/```json|```/g, '').trim();
-      const data = JSON.parse(cleanedText);
-      
-      return {
-        original: text,
-        indirect: data.indirectMessage,
-        sentiment: data.detectedSentiment,
-        senderRole,
-        fromLanguage: detectedLanguage,
-        toLanguage: recipientLanguage
-      };
-    } catch (error) {
-      console.error("Transformation Error:", error);
-      return { 
-        original: text, 
-        indirect: text, 
-        sentiment: 'neutral',
-        error: error.message 
-      };
-    }
-  }
-  
-  async detectLanguage(text) {
-    const cleanText = text.trim();
-    
-    // Check Unicode ranges FIRST
-    if (/[\u0B80-\u0BFF]/.test(cleanText)) return "Tamil";
-    if (/[\u0900-\u097F]/.test(cleanText)) return "Hindi";
-    if (/[\u0C00-\u0C7F]/.test(cleanText)) return "Telugu";
-    if (/[\u0C80-\u0CFF]/.test(cleanText)) return "Kannada";
-    if (/[\u0D00-\u0D7F]/.test(cleanText)) return "Malayalam";
-    
-    // English check
-    if (/^[a-zA-Z0-9\s.,!?'"()-]+$/.test(cleanText)) return "English";
-    
-    return "English"; // Default fallback
-}
-  
-  async formatMessageOnly(text, senderRole, language) {
-    // Format message without translation (when languages are same)
-    const prompt = `
-      Format this message in ${language} into polite third-person formal speech.
-      
-      Original from ${senderRole}: "${text}"
-      
-      Instructions:
-      - Convert to 3rd person (e.g., "The customer suggests..." instead of "I want...")
-      - Make it formal and polite
-      - Remove slang
-      - Keep it in ${language}
-      
-      Return JSON: {
-        "indirectMessage": "formatted message",
-        "detectedSentiment": "positive|neutral|frustrated|negotiating"
+Original ${senderLanguage} message: "${text}"
+Speaker: ${senderRole}
+
+Make it polite and indirect in ${senderLanguage}. Respond with only the polite ${senderLanguage} version.
+
+Examples:
+English: "I cannot go below 40 rupees" → "The vendor respectfully explains that the current market conditions do not allow pricing below 40 rupees"
+Hindi: "मैं 40 रुपये से नीचे नहीं जा सकता" → "विक्रेता ने विनम्रता से बताया कि बाजार की स्थिति 40 रुपये से कम दाम की अनुमति नहीं देती"
+Tamil: "40 ரூபாய்க்கு கீழே குறைக்க முடியாது" → "விற்பனையாளர் மரியாதையுடன் தெரிவிக்கிறார் कि சந்தை நிலைமைகள் 40 ரூபாய்க்கு கீழே விலை நிர்ணயம் செய்ய அனுமதிக்காது"
+
+Now convert: "${text}"`;
+        
+        console.log('🚀 Calling polite conversion model (same language)...');
+        const politeResult = await this.politeModel.generateContent(politePrompt);
+        const politeMessage = politeResult.response.text().trim();
+        
+        console.log(`✅ Polite conversion complete: "${politeMessage}"`);
+        
+        return {
+          original: text,
+          translated: politeMessage, // Same as indirect since no translation needed
+          indirect: politeMessage,
+          culturalNote: `Polite ${senderLanguage} marketplace communication (no translation needed)`,
+          senderRole,
+          timestamp: new Date().toISOString()
+        };
       }
-    `;
-    
-    try {
-      const result = await this.model.generateContent(prompt);
-      const responseText = result.response.text();
-      const cleanedText = responseText.replace(/```json|```/g, '').trim();
-      const data = JSON.parse(cleanedText);
       
+      // DIFFERENT LANGUAGES: Full translation + polite conversion process
+      console.log(`🌐 Different languages detected, performing full translation process`);
+      
+      // Step 1: Convert to polite indirect speech in ORIGINAL language first
+      const politePrompt = `Convert this ${senderLanguage} message to polite third-person speech for an Indian marketplace:
+
+Original ${senderLanguage} message: "${text}"
+Speaker: ${senderRole}
+
+Make it polite and indirect in ${senderLanguage}. Respond with only the polite ${senderLanguage} version.
+
+Examples:
+English: "I cannot go below 40 rupees" → "The vendor respectfully explains that the current market conditions do not allow pricing below 40 rupees"
+Hindi: "मैं 40 रुपये से नीचे नहीं जा सकता" → "विक्रेता ने विनम्रता से बताया कि बाजार की स्थिति 40 रुपये से कम दाम की अनुमति नहीं देती"
+Tamil: "40 ரூபாய்க்கு கீழே குறைக்க முடியாது" → "விற்பனையாளர் மரியாதையுடன் தெரிவிக்கிறார் கि சந்தை நிலைமைகள் 40 ரூபாய்க்கு கீழே விலை நிர்ணயம் செய்ய அனுமதிக்காது"
+
+Now convert: "${text}"`;
+      
+      console.log('🚀 Calling polite conversion model (original language)...');
+      const politeResult = await this.politeModel.generateContent(politePrompt);
+      const politeOriginal = politeResult.response.text().trim();
+      
+      console.log(`🔍 Polite original: "${politeOriginal}"`);
+      
+      // Step 2: Translate the polite version to recipient language
+      const translationPrompt = `Translate this polite ${senderLanguage} text to ${recipientLanguage}: "${politeOriginal}"
+
+Provide only the complete translation, nothing else.`;
+      
+      console.log('🚀 Calling translation model...');
+      const translationResult = await this.translationModel.generateContent(translationPrompt);
+      const rawResponse = translationResult.response.text();
+      const finalTranslation = rawResponse.trim();
+      
+      console.log(`✅ Final translation: "${finalTranslation}"`);
+      
+      // Step 3: Add cultural context
+      const culturalNote = `Respectful ${senderLanguage} to ${recipientLanguage} marketplace communication`;
+
+      console.log(`✅ Translation complete:`);
+      console.log(`   Original: "${text}"`);
+      console.log(`   Polite (${senderLanguage}): "${politeOriginal}"`);
+      console.log(`   Final (${recipientLanguage}): "${finalTranslation}"`);
+      console.log(`   Cultural: "${culturalNote}"`);
+
       return {
         original: text,
-        indirect: data.indirectMessage,
-        sentiment: data.detectedSentiment,
+        translated: finalTranslation,
+        indirect: finalTranslation,
+        culturalNote: culturalNote,
         senderRole,
-        fromLanguage: language,
-        toLanguage: language,
-        note: "Formatted only (no translation needed)"
+        timestamp: new Date().toISOString()
       };
     } catch (error) {
-      console.error("Formatting Error:", error);
-      return {
-        original: text,
-        indirect: text,
-        sentiment: 'neutral',
-        senderRole
-      };
+      console.error('❌ Transform error:', error.message);
+      throw new Error(`Translation failed: ${error.message}`);
     }
   }
+
+  getSupportedLanguages() {
+    return [
+      { code: 'en', name: 'English', nativeName: 'English' },
+      { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी' },
+      { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்' }
+    ];
+  }
 }
+
 module.exports = MessageTransformService;

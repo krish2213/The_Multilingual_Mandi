@@ -1,21 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, Leaf, Apple } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSocket } from '../../contexts/SocketContext';
 import StepIndicator from '../common/StepIndicator';
 import SpeakButton from '../common/SpeakButton';
 
-const VendorSetup = ({ onSetupComplete }) => {
-  const [selectedLanguage, setSelectedLanguage] = useState('en');
+const VendorSetup = ({ onSetupComplete, preSelectedLanguage }) => {
   const [selectedCategories, setSelectedCategories] = useState([]);
   const { createSession } = useSocket();
   const { t, i18n } = useTranslation();
 
-  const languages = [
-    { code: 'en', name: 'English' },
-    { code: 'hi', name: 'हिन्दी' },
-    { code: 'ta', name: 'தமிழ்' }
-  ];
+  // Use pre-selected language from RoleSelector
+  useEffect(() => {
+    if (preSelectedLanguage) {
+      i18n.changeLanguage(preSelectedLanguage);
+    }
+  }, [preSelectedLanguage, i18n]);
 
   // ONLY VEGETABLES AND FRUITS - NO FISH OR FLOWERS
   const categories = [
@@ -45,13 +45,17 @@ const VendorSetup = ({ onSetupComplete }) => {
 
   const handleContinue = () => {
     if (selectedCategories.length === 0) {
-      alert('Please select at least one category');
+      alert(t('pleaseSelectCategory'));
       return;
     }
 
-    i18n.changeLanguage(selectedLanguage);
-    createSession(selectedLanguage, selectedCategories);
-    onSetupComplete({ language: selectedLanguage, categories: selectedCategories });
+    createSession(preSelectedLanguage || 'en', selectedCategories);
+    onSetupComplete({ language: preSelectedLanguage || 'en', categories: selectedCategories });
+  };
+
+  const handleSpeakClick = (e) => {
+    // Prevent event bubbling
+    e.stopPropagation();
   };
 
   return (
@@ -64,63 +68,28 @@ const VendorSetup = ({ onSetupComplete }) => {
           <div className="text-center mb-8">
             <div className="flex items-center justify-center space-x-3 mb-2">
               <h2 className="text-3xl font-bold text-bharat-primary">
-                Vendor Setup
+                {t('vendorSetup')}
               </h2>
               <SpeakButton 
-                text="Vendor Setup" 
-                language={selectedLanguage} 
+                text={t('vendorSetup')} 
+                language={preSelectedLanguage || 'en'} 
                 size="md"
               />
             </div>
             <p className="text-bharat-muted">
-              Configure your selling session preferences
+              {t('configureSellingSession')}
             </p>
-          </div>
-
-          {/* Language Selection */}
-          <div className="mb-8">
-            <div className="flex items-center space-x-2 mb-4">
-              <h3 className="text-xl font-semibold text-bharat-primary">
-                {t('language')}
-              </h3>
-              <SpeakButton 
-                text={t('language')} 
-                language={selectedLanguage} 
-                size="sm"
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              {languages.map((lang) => (
-                <button
-                  key={lang.code}
-                  onClick={() => setSelectedLanguage(lang.code)}
-                  className={`
-                    p-4 rounded-lg border-2 transition-all duration-200
-                    ${selectedLanguage === lang.code
-                      ? 'border-bharat-primary bg-bharat-primary bg-opacity-5'
-                      : 'border-bharat-border hover:border-bharat-primary'
-                    }
-                  `}
-                >
-                  <div className="text-center">
-                    <div className="font-medium text-bharat-primary">
-                      {lang.name}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Category Selection */}
           <div className="mb-8">
-            <div className="flex items-center space-x-2 mb-4">
+            <div className="flex items-center justify-center space-x-2 mb-4">
               <h3 className="text-xl font-semibold text-bharat-primary">
                 {t('selectCategories')}
               </h3>
               <SpeakButton 
                 text={t('selectCategories')} 
-                language={selectedLanguage} 
+                language={preSelectedLanguage || 'en'} 
                 size="sm"
               />
             </div>
@@ -130,42 +99,44 @@ const VendorSetup = ({ onSetupComplete }) => {
                 const isSelected = selectedCategories.includes(category.key);
                 
                 return (
-                  <button
-                    key={category.key}
-                    onClick={() => handleCategoryToggle(category.key)}
-                    className={`
-                      p-8 rounded-lg border-2 transition-all duration-200
-                      ${isSelected
-                        ? 'border-bharat-primary bg-bharat-primary bg-opacity-5 transform scale-105'
-                        : 'border-bharat-border hover:border-bharat-primary'
-                      }
-                    `}
-                  >
-                    <div className="text-center">
-                      <div className={`
-                        w-16 h-16 mx-auto mb-4 rounded-full
-                        ${category.bgColor} flex items-center justify-center
-                      `}>
-                        <IconComponent className={`w-8 h-8 ${category.color}`} />
-                      </div>
-                      <div className="flex items-center justify-center space-x-1">
-                        <span className="font-medium text-bharat-primary text-lg">
+                  <div key={category.key} className="text-center">
+                    <button
+                      onClick={() => handleCategoryToggle(category.key)}
+                      className={`
+                        p-8 rounded-lg border-2 transition-all duration-200 w-full
+                        ${isSelected
+                          ? 'border-bharat-primary bg-bharat-primary bg-opacity-5 transform scale-105'
+                          : 'border-bharat-border hover:border-bharat-primary'
+                        }
+                      `}
+                    >
+                      <div className="text-center">
+                        <div className={`
+                          w-16 h-16 mx-auto mb-4 rounded-full
+                          ${category.bgColor} flex items-center justify-center
+                        `}>
+                          <IconComponent className={`w-8 h-8 ${category.color}`} />
+                        </div>
+                        <div className="font-medium text-bharat-primary text-lg">
                           {category.label}
-                        </span>
-                        <SpeakButton 
-                          text={category.label} 
-                          language={selectedLanguage} 
-                          size="sm"
-                        />
+                        </div>
                       </div>
+                    </button>
+                    {/* SpeakButton moved outside button to fix DOM nesting */}
+                    <div className="flex justify-center mt-2" onClick={handleSpeakClick}>
+                      <SpeakButton 
+                        text={category.label} 
+                        language={preSelectedLanguage || 'en'} 
+                        size="sm"
+                      />
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
             {selectedCategories.length === 0 && (
               <p className="text-bharat-negotiation text-sm mt-4 text-center">
-                Please select at least one category to continue
+                {t('pleaseSelectCategoryToContinue')}
               </p>
             )}
           </div>
