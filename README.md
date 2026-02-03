@@ -282,7 +282,7 @@ CLIENT_URL=https://your-domain.com
 ## 👤 Author
 
 **Krishnapriya K.**  
-🎓 Computer Science Graduate  
+🎓 Computer Science Undergraduate Student
 
 🔗 LinkedIn: https://www.linkedin.com/in/krishnapriya-k-68a7b5254/  
 💻 GitHub: https://github.com/krish2213
